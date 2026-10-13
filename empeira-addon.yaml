@@ -1,0 +1,70 @@
+schema: 1
+description: Run repository pre-commit hooks in prepared local container images
+executable: bin/pre-commit
+commands:
+  install:
+    description: Prepare images and install owned Git hooks
+    options:
+      --repo:
+        completion: directory
+      --all:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none
+  uninstall:
+    description: Remove only owned Git hooks
+    options:
+      --repo:
+        completion: directory
+      --all:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none
+  prepare:
+    description: Build missing repository images
+    options:
+      --repo:
+        completion: directory
+      --all:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none
+  build:
+    description: Rebuild repository images explicitly
+    options:
+      --repo:
+        completion: directory
+      --all:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none
+  status:
+    description: Show hook and image status
+    options:
+      --repo:
+        completion: directory
+      --all:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none
+  run:
+    description: Run pre-commit in one repository without questions
+    options:
+      --repo:
+        completion: directory
+      --all-files:
+        completion: none
+      -h:
+        completion: none
+      --help:
+        completion: none

@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# SPDX-License-Identifier: AGPL-3.0-only
+
+require_relative '../lib/pre_commit'
+exit EmpeiraPreCommit.new.call(ARGV)
