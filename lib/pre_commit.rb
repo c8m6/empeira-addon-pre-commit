@@ -8,6 +8,7 @@ require 'open3'
 require 'optparse'
 require 'pathname'
 require 'tmpdir'
+require 'yaml'
 
 class EmpeiraPreCommit
   ROOT = File.expand_path('..', __dir__)
@@ -15,6 +16,7 @@ class EmpeiraPreCommit
   VERSION = '4.3.0'
   BASE = 'python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641'
   COMMANDS = %w[install uninstall prepare build status run].freeze
+  HOOK_TYPES = %w[pre-commit commit-msg prepare-commit-msg].freeze
   MARKER = "#!/usr/bin/env ruby\n# Managed by empeira-addon-pre-commit (API 1)\n"
   class Error < StandardError; end
 
@@ -241,8 +243,31 @@ class EmpeiraPreCommit
     tag
   end
 
-  def hook_path(repo)
-    path = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'hooks/pre-commit')
+  def hook_types(repo)
+    config = YAML.safe_load_file(File.join(repo, CONFIG), aliases: true)
+    raise Error, "Invalid #{CONFIG}: expected a mapping" unless config.is_a?(Hash)
+
+    explicit = config['default_install_hook_types']
+    if explicit
+      raise Error, 'default_install_hook_types must be a list' unless explicit.is_a?(Array)
+
+      unsupported = explicit - HOOK_TYPES
+      raise Error, "Unsupported hook types: #{unsupported.join(', ')}" unless unsupported.empty?
+
+      return explicit.uniq
+    end
+
+    stages = Array(config['default_stages'])
+    Array(config['repos']).each do |source|
+      Array(source['hooks']).each { |hook| stages.concat(Array(hook['stages'])) }
+    end
+    ['pre-commit', *%w[commit-msg prepare-commit-msg].select { |type| stages.include?(type) }]
+  rescue Psych::Exception => e
+    raise Error, "Invalid #{CONFIG}: #{e.message}"
+  end
+
+  def hook_path(repo, type = 'pre-commit')
+    path = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', "hooks/#{type}")
     common = git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
     # A shared external hooksPath cannot be uninstalled for just one repository.
     parent = Pathname(path).parent
@@ -259,7 +284,7 @@ class EmpeiraPreCommit
     File.file?(path) && !File.symlink?(path) && File.binread(path).start_with?(MARKER)
   end
 
-  def wrapper
+  def wrapper(hook_type = 'pre-commit')
     addon = File.realpath(@env['EMPEIRA_ADDON_PATH'] || ROOT)
     # API 1's refs/<sha256(ref)> follows addon updates, unlike revisions/<commit>.
     snapshot = File.basename(File.dirname(addon)) == 'revisions' && File.basename(addon).match?(/\A[0-9a-f]{40,64}\z/)
@@ -285,7 +310,19 @@ class EmpeiraPreCommit
         abort 'Error: Addon entrypoint missing; sync the addon and reinstall hooks.' unless File.executable?(entry)
         repo, error, result = Open3.capture3('git', 'rev-parse', '--show-toplevel')
         abort "Error: Cannot identify Git repository: \#{error}" unless result.success?
-        exec({ 'EMPEIRA_CONFIG_RUNTIME_CONTAINER_ENGINE' => #{runtime.inspect} }, entry, 'run', '--repo', repo.strip)
+        arguments = ['run', '--repo', repo.strip]
+        environment = { 'EMPEIRA_CONFIG_RUNTIME_CONTAINER_ENGINE' => #{runtime.inspect} }
+        if #{hook_type.inspect} != 'pre-commit'
+          abort 'Error: Commit message filename missing.' unless ARGV.first
+
+          arguments.concat(['--', '--hook-stage', #{hook_type.inspect}, '--commit-msg-filename',
+                            File.expand_path(ARGV.first, repo.strip)])
+        end
+        if #{hook_type.inspect} == 'prepare-commit-msg'
+          environment['PRE_COMMIT_COMMIT_MSG_SOURCE'] = ARGV[1]
+          environment['PRE_COMMIT_COMMIT_OBJECT_NAME'] = ARGV[2]
+        end
+        exec(environment, entry, *arguments)
       rescue SystemCallError => e
         abort "Error: Cannot start pre-commit addon: \#{e.message}"
       end
@@ -294,43 +331,57 @@ class EmpeiraPreCommit
 
   def install(repo)
     configuration!(repo)
-    path = hook_path(repo)
-    raise Error, 'Cannot overwrite an existing unmanaged Git hook' if (File.exist?(path) || File.symlink?(path)) && !managed?(path)
-
-    content = wrapper
-    prepare(repo)
-    FileUtils.mkdir_p(File.dirname(path))
-    # Exclusive creation also protects a foreign hook created while the image builds.
-    if File.exist?(path) || File.symlink?(path)
-      raise Error, 'Cannot overwrite an existing unmanaged Git hook' unless managed?(path)
-
-      File.binwrite(path, content)
-    else
-      File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o755) { |file| file.write(content) }
+    paths = hook_types(repo).to_h { |type| [type, hook_path(repo, type)] }
+    paths.each_value do |path|
+      if (File.exist?(path) || File.symlink?(path)) && !managed?(path)
+        raise Error, "Cannot overwrite an existing unmanaged Git hook: #{path}"
+      end
     end
-    File.chmod(0o755, path)
-    @output.puts "Installed #{path}"
+
+    prepare(repo)
+    paths.each do |type, path|
+      FileUtils.mkdir_p(File.dirname(path))
+      if File.exist?(path) || File.symlink?(path)
+        raise Error, "Cannot overwrite an existing unmanaged Git hook: #{path}" unless managed?(path)
+
+        File.binwrite(path, wrapper(type))
+      else
+        File.open(path, File::WRONLY | File::CREAT | File::EXCL, 0o755) { |file| file.write(wrapper(type)) }
+      end
+      File.chmod(0o755, path)
+      @output.puts "Installed #{path}"
+    end
+    (HOOK_TYPES - paths.keys).each do |type|
+      path = hook_path(repo, type)
+      File.unlink(path) if managed?(path)
+    end
   end
 
   def uninstall(repo)
-    path = hook_path(repo)
-    if managed?(path)
+    removed = false
+    HOOK_TYPES.each do |type|
+      path = hook_path(repo, type)
+      next unless managed?(path)
+
       File.unlink(path)
       @output.puts "Removed #{path}"
-    else
-      @output.puts 'No managed hook; existing hooks left unchanged.'
+      removed = true
     end
+    @output.puts 'No managed hooks; existing hooks left unchanged.' unless removed
   end
 
   def status(repo)
-    path = hook_path(repo)
-    hook = managed?(path) ? 'installed' : File.exist?(path) || File.symlink?(path) ? 'unmanaged' : 'absent'
+    hooks = HOOK_TYPES.map do |type|
+      path = hook_path(repo, type)
+      state = managed?(path) ? 'installed' : File.exist?(path) || File.symlink?(path) ? 'unmanaged' : 'absent'
+      "#{type}: #{state}"
+    end
     unless File.file?(File.join(repo, CONFIG))
-      @output.puts "Hook: #{hook}; no #{CONFIG}"
+      @output.puts "Hooks: #{hooks.join(', ')}; no #{CONFIG}"
       return
     end
     tag = image(repo)
-    @output.puts "Hook: #{hook}; image: #{image_present?(tag) ? 'prepared' : 'missing'} (#{tag})"
+    @output.puts "Hooks: #{hooks.join(', ')}; image: #{image_present?(tag) ? 'prepared' : 'missing'} (#{tag})"
   end
 
   def run_arguments(repo, arguments = [], all_files: false)
@@ -347,7 +398,7 @@ class EmpeiraPreCommit
     # Git hook context, including temporary indexes; never forward the full host environment.
     %w[GIT_INDEX_FILE GIT_PREFIX GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE
        GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE SKIP PRE_COMMIT_ALLOW_NO_CONFIG
-       PRE_COMMIT_COLOR TERM].each do |key|
+       PRE_COMMIT_COLOR PRE_COMMIT_COMMIT_MSG_SOURCE PRE_COMMIT_COMMIT_OBJECT_NAME TERM].each do |key|
       argv.concat(['--env', "#{key}=#{@env[key]}"]) if @env.key?(key)
     end
     index = @env['GIT_INDEX_FILE']
