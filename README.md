@@ -140,9 +140,12 @@ The build downloads the base and scanner dependencies, runs
 `PRE_COMMIT_HOME=/opt/pre-commit` in the image. Temporary build files are removed.
 Regular hook runs use `--pull=never` and `--network=none`, without a host cache
 volume. A small adapter for the **pinned** pre-commit version forbids cache
-initialization and environment installation at runtime. An incomplete cache
-aborts the commit with a rebuild diagnostic. Missing images, including manually
-deleted images, are rebuilt before running; build errors abort the commit.
+initialization and environment installation at runtime. The complete cache
+validation runs at image build time, not before every commit; runtime attempts
+to install missing environments still fail closed. Missing images, including
+manually deleted images, are rebuilt before running; build errors abort the commit.
+A warm run skips the separate container-engine readiness probe and reuses the
+already computed image fingerprint, but still checks that the image exists.
 
 ## Local hooks and system dependencies
 
@@ -206,6 +209,28 @@ unsupported. On macOS/WSL2 the engine must share these paths; on SELinux hosts
 you must allow the bind mounts through the normal host policy. The addon does
 not change labels or request root access. Scanner exit status is returned directly.
 
+## Output and performance
+
+When the host's stderr is a terminal, the addon forwards
+`PRE_COMMIT_COLOR=always` so pre-commit retains its ANSI color output even
+though the isolated container has no pseudo-terminal. An explicitly set
+`PRE_COMMIT_COLOR` takes precedence. Hook-specific color behavior depends on
+the scanner; the addon also forwards existing `FORCE_COLOR` and
+`CLICOLOR_FORCE` values. Nonterminal output remains uncolored by default.
+
+Only the first invocation that needs a scanner image builds and prepares it.
+Further commits reuse the image, but each configured Git stage starts a separate
+container. Pre-commit itself may buffer scanner output until each hook finishes.
+In rootless Podman, engine startup and mount setup can take longer than Docker,
+particularly under WSL2. The addon never starts a persistent background service
+or bypasses the immutable/offline image policy for speed.
+
+Older Podman/Buildah combinations can emit `can't raise ambient capability`
+warnings during rootless builds; these originate in the container runtime, not
+the scanner. Podman 5.3 (Buildah 1.38) addressed the underlying warning source.
+Do not use `sudo` or suppress all engine warnings just to hide the messages.
+They can be ignored when the build succeeds.
+
 ## Troubleshooting and development
 
 - Missing configuration: add your chosen hooks yourself; the addon provides none.
@@ -215,9 +240,8 @@ not change labels or request root access. Scanner exit status is returned direct
   default image includes Ruby, RubyGems, development headers and `libffi-dev`;
   run `empeira addons update` and rebuild the image. Custom
   `Containerfile.pre-commit` definitions must supply their own dependencies.
-- Rootless Podman may warn that `/` is not a shared mount or that ambient
-  capabilities cannot be raised. These warnings alone do not mean a build failed;
-  investigate only if subsequent mounts or scanner execution fail.
+- Rootless Podman may warn that `/` is not a shared mount. This warning
+  alone does not mean a build failed; investigate if bind mounts actually fail.
 - Engine unavailable: start the engine and check permissions and path sharing.
 - Unmanaged hook: review it yourself; move/remove it deliberately before installing.
 - Incomplete image: run `build --repo PATH`; include required languages/libraries
