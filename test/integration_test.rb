@@ -101,7 +101,7 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
     staged, = command('git', 'show', 'HEAD:data.txt', directory: repo)
     assert(staged == "staged\n")
     subject, = command('git', 'log', '-1', '--format=%s', directory: repo)
-    assert(subject == 'Prepared: Staged check from standalone Hiera',
+    assert(subject.strip == 'Prepared: Staged check from standalone Hiera',
            "prepare-commit-msg did not modify the commit message: #{subject}")
     bad_message = File.join(repo, 'unprepared-msg.txt')
     File.write(bad_message, "unprepared message\n")
