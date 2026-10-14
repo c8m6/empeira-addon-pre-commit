@@ -46,12 +46,8 @@ Store._new_repo = prepared_repo
 pre_commit.repository._hook_install = forbid_install
 try:
     os.makedirs(os.environ['HOME'], exist_ok=True)
-    if sys.argv[1:] == ['--check']:
-        check()
-        sys.exit(0)
-    # The immutable image was already verified during build. On regular runs,
-    # the patched store/install entrypoints still reject incomplete caches.
-    sys.exit(main(sys.argv[1:]))
+    check()
+    sys.exit(0 if sys.argv[1:] == ['--check'] else main(sys.argv[1:]))
 except (RuntimeError, OSError) as error:
     print(f'Error: {error}', file=sys.stderr)
     sys.exit(1)
