@@ -92,6 +92,9 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
     out, err = command(BIN, 'run', '--repo', repo, '--all-files', env: env)
     assert(out.include?('Passed') && !(out + err).include?('Installing environment'))
     assert(!out.include?('Building repository'))
+    colored, = command(BIN, 'run', '--repo', repo, '--all-files',
+                       env: env.merge('PRE_COMMIT_COLOR' => 'always'))
+    assert(colored.include?("\e["), 'Expected pre-commit ANSI colors with PRE_COMMIT_COLOR=always')
     puts 'PASS real image build, prepared Python and Ruby hooks, baked local system tool and offline reuse'
 
     File.write(file, "staged\n")
