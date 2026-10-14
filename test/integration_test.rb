@@ -29,12 +29,20 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
     command('git', 'init', '-q', repo)
     command('git', 'config', 'user.name', 'Synthetic Test', directory: repo)
     command('git', 'config', 'user.email', 'test@example.invalid', directory: repo)
-    config = { 'repos' => [{ 'repo' => 'local', 'hooks' => [{ 'id' => 'synthetic', 'name' => 'Synthetic dependency check',
+    config = { 'default_install_hook_types' => EmpeiraPreCommit::HOOK_TYPES,
+               'repos' => [{ 'repo' => 'local', 'hooks' => [{ 'id' => 'synthetic', 'name' => 'Synthetic dependency check',
                'entry' => 'python check.py', 'language' => 'python', 'additional_dependencies' => ['six==1.17.0'],
                'files' => '\\.txt$' }, { 'id' => 'synthetic-system', 'name' => 'Synthetic baked system tool',
                'entry' => '/opt/scanner/check', 'language' => 'system', 'files' => '\\.txt$' },
                { 'id' => 'synthetic-ruby', 'name' => 'Synthetic RubyGems hook',
-                 'entry' => "ruby -e 'exit 0'", 'language' => 'ruby', 'files' => '\\.txt$' }] }] }
+                 'entry' => "ruby -e 'exit 0'", 'language' => 'ruby',
+                 'additional_dependencies' => ['puppet'], 'files' => '\\.txt$' },
+               { 'id' => 'synthetic-prepare-msg', 'name' => 'Prepare commit message',
+                 'entry' => 'python message_check.py prepare', 'language' => 'system',
+                 'stages' => ['prepare-commit-msg'] },
+               { 'id' => 'synthetic-commit-msg', 'name' => 'Validate commit message',
+                 'entry' => 'python message_check.py verify', 'language' => 'system',
+                 'stages' => ['commit-msg'] }] }] }
     File.write(File.join(repo, '.pre-commit-config.yaml'), YAML.dump(config))
     FileUtils.mkdir_p(File.join(repo, 'pre-commit', 'tools'))
     tool = File.join(repo, 'pre-commit', 'tools', 'check')
@@ -62,6 +70,17 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
               path.write_text(text.replace('FIX', 'fixed'))
       sys.exit(1 if failed else 0)
     PYTHON
+    File.write(File.join(repo, 'message_check.py'), <<~PYTHON)
+      import pathlib, sys
+      mode, filename = sys.argv[1:]
+      path = pathlib.Path(filename)
+      text = path.read_text()
+      if mode == 'prepare':
+          path.write_text('Prepared: ' + text)
+      elif not text.startswith('Prepared: '):
+          print('commit message not prepared:', filename)
+          sys.exit(1)
+    PYTHON
     file = File.join(repo, 'data.txt')
     File.write(file, "initial\n")
     command('git', 'add', '.', directory: repo)
@@ -69,6 +88,7 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
     tags << app.image(repo)
     out, = command(BIN, 'install', '--repo', repo, env: env)
     assert(out.include?('Build completed.'))
+    EmpeiraPreCommit::HOOK_TYPES.each { |type| assert(app.managed?(app.hook_path(repo, type))) }
     out, err = command(BIN, 'run', '--repo', repo, '--all-files', env: env)
     assert(out.include?('Passed') && !(out + err).include?('Installing environment'))
     assert(!out.include?('Building repository'))
@@ -81,7 +101,16 @@ Dir.mktmpdir('empeira-integration-') do |tmp|
     assert(File.read(file) == "staged\nunstaged\n")
     staged, = command('git', 'show', 'HEAD:data.txt', directory: repo)
     assert(staged == "staged\n")
-    puts 'PASS standalone Git commit with staged/unstaged restoration'
+    subject, = command('git', 'log', '-1', '--format=%s', directory: repo)
+    assert(subject.strip == 'Prepared: Staged check from standalone Hiera',
+           "prepare-commit-msg did not modify the commit message: #{subject}")
+    bad_message = File.join(repo, 'unprepared-msg.txt')
+    File.write(bad_message, "unprepared message\n")
+    message_out, message_err = command(BIN, 'run', '--repo', repo, '--', '--hook-stage', 'commit-msg',
+                                       '--commit-msg-filename', bad_message, env: env, expected: 1)
+    assert((message_out + message_err).include?('commit message not prepared'))
+    File.unlink(bad_message)
+    puts 'PASS real pre-commit, prepare-commit-msg and commit-msg hooks with message forwarding'
 
     File.write(file, "FAIL\n")
     command('git', 'add', 'data.txt', directory: repo)

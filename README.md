@@ -85,6 +85,40 @@ Core global options go before `addon`. Outside Empeira, the executable chooses
 Docker when present, otherwise Podman. A selected but inaccessible engine fails
 explicitly instead of silently switching.
 
+## Git hook types
+
+The addon supports `pre-commit`, `commit-msg` and `prepare-commit-msg` using the
+same prepared scanner image. The existing `.pre-commit-config.yaml` determines
+which hooks are installed. If `default_install_hook_types` is set, it selects
+exactly those types; otherwise the addon installs `pre-commit` and recognizes
+explicit `commit-msg` / `prepare-commit-msg` stages in the configuration.
+
+For example:
+
+```yaml
+default_install_hook_types: [pre-commit, commit-msg, prepare-commit-msg]
+repos:
+  - repo: local
+    hooks:
+      - id: validate-message
+        name: Validate commit message
+        entry: python scripts/check_commit_message.py
+        language: system
+        stages: [commit-msg]
+```
+
+An actual `git commit` forwards the commit-message file path to the container.
+`prepare-commit-msg` additionally forwards Git's message source and commit object
+as `PRE_COMMIT_COMMIT_MSG_SOURCE` and `PRE_COMMIT_COMMIT_OBJECT_NAME`. The
+message file is mounted read/write so prepare hooks can edit it. Both stages
+preserve their scanners' exit codes. A configuration change requires another
+`install` to update the installed Git hook types; `uninstall` removes all owned
+types even if the configuration changed. Foreign hooks are never overwritten.
+
+Only these three hook types are managed; other entries in
+`default_install_hook_types` produce an explicit error. For other stages, use
+pre-commit directly.
+
 ## Configuration and images
 
 An existing `.pre-commit-config.yaml` is used unchanged. A missing configuration
@@ -115,7 +149,8 @@ deleted images, are rebuilt before running; build errors abort the commit.
 Remote hooks and `repo: local` hooks with ordinary package dependencies use
 pre-commit's own installation logic. `language: system` tools must already exist
 in the image, or be repository scripts mounted at runtime. The default image
-provides Python, Git, Ruby/RubyGems (including Ruby development headers), and a C/C++ build toolchain, not a scanner catalogue.
+provides Python, Git, Ruby/RubyGems, Ruby development headers, `libffi-dev`
+and a C/C++ build toolchain, not a scanner catalogue.
 
 For extra tools, optionally supply the standard build definition
 `Containerfile.pre-commit` in the target repository. It replaces the base recipe;
@@ -176,9 +211,10 @@ not change labels or request root access. Scanner exit status is returned direct
 - Missing configuration: add your chosen hooks yourself; the addon provides none.
 - Missing executable: install the host Ruby/Git/engine yourself, or bake a scanner
   tool into `Containerfile.pre-commit`.
-- Ruby-language scanner fails with `gem not found`: the default image now includes
-  Ruby and RubyGems; run `empeira addons update` and rebuild the image. Custom
-  `Containerfile.pre-commit` definitions must include Ruby and RubyGems themselves.
+- Ruby-language scanner fails with `gem not found` or `missing libffi`: the
+  default image includes Ruby, RubyGems, development headers and `libffi-dev`;
+  run `empeira addons update` and rebuild the image. Custom
+  `Containerfile.pre-commit` definitions must supply their own dependencies.
 - Rootless Podman may warn that `/` is not a shared mount or that ambient
   capabilities cannot be raised. These warnings alone do not mean a build failed;
   investigate only if subsequent mounts or scanner execution fail.

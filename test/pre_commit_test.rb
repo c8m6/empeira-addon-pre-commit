@@ -123,6 +123,56 @@ Dir.mktmpdir('empeira-unit-') do |tmp|
     File.unlink(hook)
   end
 
+  check('commit-msg and prepare-commit-msg install, forward message files and uninstall cleanly') do
+    config = File.join(hiera, '.pre-commit-config.yaml')
+    File.write(config, YAML.dump('repos' => [], 'default_install_hook_types' => %w[pre-commit commit-msg prepare-commit-msg]))
+    _, err, result = cli(env, 'install', '--repo', hiera)
+    assert(result.success?, err)
+    EmpeiraPreCommit::HOOK_TYPES.each { |type| assert(app.managed?(app.hook_path(hiera, type))) }
+    message = File.join(hiera, '.git', 'COMMIT_EDITMSG')
+    File.write(message, "feat: synthetic message\n")
+    File.write(log, '')
+    _, err, result = Open3.capture3(env, app.hook_path(hiera, 'commit-msg'), message, chdir: hiera)
+    assert(result.success?, err)
+    _, err, result = Open3.capture3(env, app.hook_path(hiera, 'prepare-commit-msg'),
+                                   message, 'message', 'deadbeef', chdir: hiera)
+    assert(result.success?, err)
+    runs = File.readlines(log).map { |line| JSON.parse(line) }.select { |args| args.first == 'run' }
+    assert(runs.size == 2)
+    assert(runs.first.each_cons(2).include?(%w[--hook-stage commit-msg]))
+    assert(runs.last.each_cons(2).include?(%w[--hook-stage prepare-commit-msg]))
+    assert(runs.all? { |args| args.each_cons(2).include?(['--commit-msg-filename', message]) })
+    assert(runs.last.include?('--env') && runs.last.include?('PRE_COMMIT_COMMIT_MSG_SOURCE=message'))
+    assert(runs.last.include?('PRE_COMMIT_COMMIT_OBJECT_NAME=deadbeef'))
+    _, err, result = cli(env, 'uninstall', '--repo', hiera)
+    assert(result.success?, err)
+    EmpeiraPreCommit::HOOK_TYPES.each { |type| assert(!File.exist?(app.hook_path(hiera, type))) }
+    File.write(config, "repos: []\n")
+  end
+
+  check('message stages are discovered without defaults and unmanaged hooks are preserved') do
+    config = File.join(hiera, '.pre-commit-config.yaml')
+    File.write(config, YAML.dump('repos' => [
+      { 'repo' => 'local', 'hooks' => [{ 'id' => 'check-message', 'stages' => ['commit-msg'] }] }
+    ]))
+    assert(app.hook_types(hiera) == %w[pre-commit commit-msg])
+    foreign = app.hook_path(hiera, 'commit-msg')
+    File.write(foreign, "#!/bin/sh\nexit 0\n")
+    _, err, result = cli(env, 'install', '--repo', hiera)
+    assert(!result.success? && err.include?('unmanaged'))
+    assert(File.read(foreign).include?('exit 0'))
+    assert(!File.exist?(app.hook_path(hiera, 'pre-commit')))
+    File.unlink(foreign)
+    _, err, result = cli(env, 'install', '--repo', hiera)
+    assert(result.success?, err)
+    assert(app.managed?(app.hook_path(hiera, 'commit-msg')))
+    File.write(config, "repos: []\n")
+    _, err, result = cli(env, 'install', '--repo', hiera)
+    assert(result.success?, err)
+    assert(!File.exist?(app.hook_path(hiera, 'commit-msg')), 'Reinstall must remove obsolete owned hooks')
+    app.uninstall(hiera)
+  end
+
   check('fingerprints isolate repositories and ignore application edits') do
     original = app.image(control)
     assert(original != app.image(hiera))
