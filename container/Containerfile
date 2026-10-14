@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
-RUN apt-get update && apt-get install -y --no-install-recommends git build-essential \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git build-essential ruby ruby-dev \
+    && gem --version && rm -rf /var/lib/apt/lists/*
