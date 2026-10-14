@@ -59,8 +59,8 @@ class EmpeiraPreCommit
 
     if command == 'run'
       repo = git_root(options[:repo] || Dir.pwd)
-      prepare(repo)
-      exec(*run_arguments(repo, arguments, all_files: options[:all_files]), chdir: repo)
+      tag = prepare(repo)
+      exec(*run_arguments(repo, arguments, all_files: options[:all_files], tag: tag), chdir: repo)
     end
     selected = repositories(command, options)
     failed = false
@@ -161,9 +161,6 @@ class EmpeiraPreCommit
       @env.fetch('PATH', '').split(File::PATH_SEPARATOR).any? { |p| File.executable?(File.join(p, name)) }
     end
     raise Error, requested ? "#{requested} is not on PATH" : 'Neither Docker nor Podman is available' unless @engine
-    raise Error, "#{@engine} is unavailable; check the engine and your permissions" unless
-      system(@engine, 'info', out: File::NULL)
-
     @engine
   end
 
@@ -214,7 +211,11 @@ class EmpeiraPreCommit
     tag = image(repo)
     return tag if !force && image_present?(tag)
 
+    raise Error, "#{engine} is unavailable; check the engine and your permissions" unless
+      system(engine, 'info', out: File::NULL, err: File::NULL)
+
     @output.puts 'Pre-commit image missing or rebuild requested. Building repository-specific image...'
+    @output.flush
     Dir.mktmpdir('empeira-pre-commit-') do |directory|
       build_inputs(repo).each do |name, content|
         path = File.join(directory, name)
@@ -385,8 +386,8 @@ class EmpeiraPreCommit
     @output.puts "Hooks: #{hooks.join(', ')}; image: #{image_present?(tag) ? 'prepared' : 'missing'} (#{tag})"
   end
 
-  def run_arguments(repo, arguments = [], all_files: false)
-    tag = image(repo)
+  def run_arguments(repo, arguments = [], all_files: false, tag: nil)
+    tag ||= image(repo)
     mounts = [repo, git(repo, 'rev-parse', '--absolute-git-dir'),
               git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')].map { |p| File.realpath(p) }.uniq
     mounts.reject! { |p| mounts.any? { |other| other != p && p.start_with?("#{other}/") } }
@@ -399,8 +400,13 @@ class EmpeiraPreCommit
     # Git hook context, including temporary indexes; never forward the full host environment.
     %w[GIT_INDEX_FILE GIT_PREFIX GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE
        GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE SKIP PRE_COMMIT_ALLOW_NO_CONFIG
-       PRE_COMMIT_COLOR PRE_COMMIT_COMMIT_MSG_SOURCE PRE_COMMIT_COMMIT_OBJECT_NAME TERM].each do |key|
+       PRE_COMMIT_COLOR FORCE_COLOR CLICOLOR_FORCE PRE_COMMIT_COMMIT_MSG_SOURCE
+       PRE_COMMIT_COMMIT_OBJECT_NAME TERM].each do |key|
       argv.concat(['--env', "#{key}=#{@env[key]}"]) if @env.key?(key)
+    end
+    # The container has no PTY: retain pre-commit colors when the host has a terminal.
+    if !@env.key?('PRE_COMMIT_COLOR') && @errors.respond_to?(:tty?) && @errors.tty?
+      argv.concat(['--env', 'PRE_COMMIT_COLOR=always'])
     end
     index = @env['GIT_INDEX_FILE']
     if index && !mounts.any? { |p| File.expand_path(index, repo).start_with?("#{p}/") }
