@@ -173,6 +173,21 @@ Dir.mktmpdir('empeira-unit-') do |tmp|
     app.uninstall(hiera)
   end
 
+  check('warm hook execution needs no engine-info preflight and preserves terminal colors') do
+    File.write(log, '')
+    terminal = StringIO.new
+    def terminal.tty? = true
+    colored = EmpeiraPreCommit.new(environment: ENV.to_h.merge(env).compact, errors: terminal)
+    args = colored.run_arguments(control)
+    assert(args.each_cons(2).include?(['--env', 'PRE_COMMIT_COLOR=always']))
+    assert(File.read(log).empty?, 'Building run argv must not invoke the container engine')
+    overridden = EmpeiraPreCommit.new(environment: ENV.to_h.merge(env, 'PRE_COMMIT_COLOR' => 'never').compact,
+                                      errors: terminal)
+    args = overridden.run_arguments(control)
+    assert(args.each_cons(2).include?(['--env', 'PRE_COMMIT_COLOR=never']))
+    assert(!args.include?('PRE_COMMIT_COLOR=always'))
+  end
+
   check('fingerprints isolate repositories and ignore application edits') do
     original = app.image(control)
     assert(original != app.image(hiera))
