@@ -36,6 +36,7 @@ class EmpeiraPreCommit
       o.on('--all-files', 'Run: check all tracked files instead of staged files') { options[:all_files] = true }
       o.on('-h', '--help', 'Show this help') { options[:help] = true }
       o.separator 'Run also forwards arguments after -- to pre-commit run (for example a hook ID).'
+      o.separator 'Install manages pre-commit, commit-msg and prepare-commit-msg from repository configuration.'
       o.separator 'Core runtime option goes before addon: empeira --container-engine podman addon pre-commit ...'
     end
     if command.nil? || %w[-h --help].include?(command)
