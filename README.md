@@ -140,12 +140,12 @@ The build downloads the base and scanner dependencies, runs
 `PRE_COMMIT_HOME=/opt/pre-commit` in the image. Temporary build files are removed.
 Regular hook runs use `--pull=never` and `--network=none`, without a host cache
 volume. A small adapter for the **pinned** pre-commit version forbids cache
-initialization and environment installation at runtime. The complete cache
-validation runs at image build time, not before every commit; runtime attempts
-to install missing environments still fail closed. Missing images, including
-manually deleted images, are rebuilt before running; build errors abort the commit.
-A warm run skips the separate container-engine readiness probe and reuses the
-already computed image fingerprint, but still checks that the image exists.
+initialization and environment installation at runtime. The prepared scanner
+cache is validated at build time and on each invocation, so missing environments
+fail closed. Missing images, including manually deleted images, are rebuilt
+before running; build errors abort the commit. A warm run skips the separate
+container-engine readiness probe and reuses the already computed image
+fingerprint, but still checks that the image exists.
 
 ## Local hooks and system dependencies
 
