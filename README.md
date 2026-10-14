@@ -115,7 +115,7 @@ deleted images, are rebuilt before running; build errors abort the commit.
 Remote hooks and `repo: local` hooks with ordinary package dependencies use
 pre-commit's own installation logic. `language: system` tools must already exist
 in the image, or be repository scripts mounted at runtime. The default image
-provides Python, Git and a C/C++ build toolchain, not a scanner catalogue.
+provides Python, Git, Ruby/RubyGems (including Ruby development headers), and a C/C++ build toolchain, not a scanner catalogue.
 
 For extra tools, optionally supply the standard build definition
 `Containerfile.pre-commit` in the target repository. It replaces the base recipe;
@@ -176,6 +176,12 @@ not change labels or request root access. Scanner exit status is returned direct
 - Missing configuration: add your chosen hooks yourself; the addon provides none.
 - Missing executable: install the host Ruby/Git/engine yourself, or bake a scanner
   tool into `Containerfile.pre-commit`.
+- Ruby-language scanner fails with `gem not found`: the default image now includes
+  Ruby and RubyGems; run `empeira addons update` and rebuild the image. Custom
+  `Containerfile.pre-commit` definitions must include Ruby and RubyGems themselves.
+- Rootless Podman may warn that `/` is not a shared mount or that ambient
+  capabilities cannot be raised. These warnings alone do not mean a build failed;
+  investigate only if subsequent mounts or scanner execution fail.
 - Engine unavailable: start the engine and check permissions and path sharing.
 - Unmanaged hook: review it yourself; move/remove it deliberately before installing.
 - Incomplete image: run `build --repo PATH`; include required languages/libraries
