@@ -1,6 +1,6 @@
 # Project conventions
 
-Standalone Empeira API 1 addon, Ruby 3.2–3.4 and standard libraries only.
+Standalone Empeira API 1 addon, Ruby 3.1–4.0 and standard libraries only.
 Keep the implementation small; no Bundler, CLI framework, addon configuration
 manager or scanner catalogue. The executable must work directly after checkout.
 Do not modify Empeira Core. Use the actual API exports and manifest contract.
