@@ -12,7 +12,7 @@ touching the engine when it is missing. `status` reports missing configuration;
 
 ## Installation
 
-Requires Ruby 3.2–3.4 and Git on Linux, macOS or WSL2, plus a working Docker or
+Requires Ruby 3.1, 3.2, 3.3, 3.4 or 4.0 and Git on Linux, macOS or WSL2, plus a working Docker or
 Podman engine. Nothing is installed on the host by the addon. No Bundler, gem
 build or addon install hook is needed; `./bin/pre-commit --help` works after
 checkout. Native Windows is unsupported.
@@ -253,7 +253,8 @@ They can be ignored when the build succeeds.
 - Failed scanner: fix the reported files; pre-commit's output is preserved.
 
 Run `ruby test/pre_commit_test.rb` and, with a working engine,
-`ruby test/integration_test.rb`. Integration tests use synthetic local hooks,
+`ruby test/integration_test.rb`. CI runs both suites and syntax checks on Ruby
+3.1, 3.2, 3.3, 3.4 and 4.0 (max two matrix jobs in parallel). Integration tests use synthetic local hooks,
 exercise dependency preparation, staged/unstaged files, fixes, worktrees, image
 reuse/deletion, and exit codes. They install nothing in your working repositories.
 See [CONTRIBUTING.md](CONTRIBUTING.md). Support:
