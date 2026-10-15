@@ -34,6 +34,7 @@ def repository(path)
 end
 
 Dir.mktmpdir('empeira-unit-') do |tmp|
+  tmp = File.realpath(tmp)
   tools = File.join(tmp, 'bin')
   FileUtils.mkdir_p(tools)
   File.write(File.join(tools, 'docker'), <<~RUBY)

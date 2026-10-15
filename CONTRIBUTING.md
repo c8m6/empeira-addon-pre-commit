@@ -51,3 +51,6 @@ real-host validation; Linux/macOS unit results do not establish those results.
 The existing real Docker/Podman integration remains required on each Linux Ruby
 job. Hosted macOS has no configured engine, so its matrix runs unit and Core
 acceptance tests; run the documented real integration locally on a capable Mac.
+
+Synthetic repository paths are canonicalized before comparing them with Git roots,
+including macOS temporary-directory symlinks. No lifecycle assertion is relaxed.
