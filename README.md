@@ -259,3 +259,8 @@ exercise dependency preparation, staged/unstaged files, fixes, worktrees, image
 reuse/deletion, and exit codes. They install nothing in your working repositories.
 See [CONTRIBUTING.md](CONTRIBUTING.md). Support:
 [Empeira Discussions](https://github.com/c8m6/empeira/discussions).
+
+Ruby 3.1 is the minimum supported version. All five supported versions (3.1, 3.2,
+3.3, 3.4 and 4.0) run standalone behavior and actual addon/Core acceptance tests
+on Linux and macOS in regular CI. See [CONTRIBUTING.md](CONTRIBUTING.md) for
+local commands, optional dependencies and runtime/WSL2 validation limits.

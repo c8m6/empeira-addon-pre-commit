@@ -9,12 +9,13 @@ permissions:
   contents: read
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       max-parallel: 2
       matrix:
+        os: [ubuntu-24.04, macos-15]
         ruby: ['3.1', '3.2', '3.3', '3.4', '4.0']
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -25,5 +26,29 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
       - run: ruby -c bin/pre-commit && ruby -c lib/pre_commit.rb
       - run: ruby test/pre_commit_test.rb
-      - run: ruby test/integration_test.rb
+      - if: matrix.os == 'ubuntu-24.04'
+        run: ruby test/integration_test.rb
       - run: git diff --check
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: c8m6/empeira
+          ref: 4c3185d3083f6defaa8a7c3908caa7615f1c34c7
+          path: .compat-core
+          persist-credentials: false
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1
+        env:
+          BUNDLER_VERSION: ${{ matrix.ruby == '4.0' && '4.0.22' || '2.6.9' }}
+          BUNDLE_FROZEN: 'true'
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler: ${{ matrix.ruby == '4.0' && '4.0.22' || '2.6.9' }}
+          bundler-cache: true
+          working-directory: .compat-core
+      - name: Run the real addon through Core installation and execution
+        working-directory: .compat-core
+        env:
+          BUNDLER_VERSION: ${{ matrix.ruby == '4.0' && '4.0.22' || '2.6.9' }}
+          BUNDLE_FROZEN: 'true'
+          EMPEIRA_OFFICIAL_ADDON_ROOT: ${{ github.workspace }}/..
+          EMPEIRA_OFFICIAL_ADDONS: pre-commit
+        run: bundle exec rspec spec/acceptance/official_addons.rb
