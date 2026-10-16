@@ -3,7 +3,7 @@
 Small standalone Ruby addon for Empeira API 1. It installs Git pre-commit hooks
 for a control repository and its Hiera repositories and runs their own
 `.pre-commit-config.yaml` inside locally built Docker or Podman images.
-Licensed AGPL-3.0-only. No default scanners and no extra addon configuration.
+Licensed AGPL-3.0-or-later. No default scanners and no extra addon configuration.
 
 **Prerequisite:** each target repository must already contain its own
 `.pre-commit-config.yaml`. `install`, `prepare`, `build`, and `run` fail before

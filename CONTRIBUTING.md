@@ -1,7 +1,7 @@
 # Contributing
 
 Keep changes focused and follow [AGENTS.md](AGENTS.md). Use Conventional Commits.
-Contributions are AGPL-3.0-only; retain third-party attribution and check license
+Contributions are AGPL-3.0-or-later; retain third-party attribution and check license
 compatibility. Documentation and comments are English. No CLA is required.
 
 ```sh

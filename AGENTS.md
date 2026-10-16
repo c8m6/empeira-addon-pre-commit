@@ -5,7 +5,7 @@ Keep the implementation small; no Bundler, CLI framework, addon configuration
 manager or scanner catalogue. The executable must work directly after checkout.
 Do not modify Empeira Core. Use the actual API exports and manifest contract.
 
-Code and documentation are AGPL-3.0-only; documentation and comments are English.
+Code and documentation are AGPL-3.0-or-later; documentation and comments are English.
 Do not overwrite unmanaged hooks or alter target pre-commit configurations.
 Keep scanner installation in the image build, never in a normal hook run.
 Preserve the pinned pre-commit adapter contract when updating the dependency.
